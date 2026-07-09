@@ -1,0 +1,17 @@
+{
+  "name": "DroneWind",
+  "short_name": "DroneWind",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0b1d39",
+  "theme_color": "#0b1d39",
+  "icons": [
+    {
+      "src": "icon-drone.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
