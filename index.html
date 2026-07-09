@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>DroneWind</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+</head>
+<body>
+  <main class="app">
+    <header class="hero">
+      <div>
+        <h1>DroneWind</h1>
+        <p id="place">Usando sua localização atual</p>
+      </div>
+      <div class="hero-actions">
+        <button id="mapBtn" class="secondary-btn">Mapa</button>
+        <button id="topAimBtn" class="aim-icon-btn" title="Usar localização atual" aria-label="Usar localização atual">⌖</button>
+      </div>
+    </header>
+
+    <section id="pageForecast" class="tab-page active">
+      <section class="card wind-table-card">
+        <div id="flightRecommendation" class="flight-recommendation neutral">--</div>
+        <div class="forecast-scroll" aria-label="Tabela horária de vento">
+          <table class="forecast-table">
+            <thead>
+              <tr id="forecastHead">
+                <th class="alt-head">Alt / kt</th>
+              </tr>
+            </thead>
+            <tbody id="forecastBody"></tbody>
+          </table>
+        </div>
+        <div class="wind-table-gap"></div>
+        <div class="additional-info-table" aria-label="Informações adicionais do horário selecionado">
+          <div class="info-row"><span>Temperatura</span><strong id="infoTemp">--</strong></div>
+          <div class="info-row"><span>Kp-index</span><strong id="infoKpIndex">--</strong></div>
+          <div class="info-row"><span>Precip. máx.</span><strong id="infoProb">--</strong></div>
+          <div class="info-row"><span>Nascer do sol</span><strong id="infoSunrise">--</strong></div>
+          <div class="info-row"><span>Visibilidade</span><strong id="infoVisibility">--</strong></div>
+          <div class="info-row"><span>Pôr do sol</span><strong id="infoSunset">--</strong></div>
+          <p id="gfsUpdate" class="note info-update-line">Última atualiz.: --</p>
+        </div>
+      </section>
+    </section>
+
+    <section id="pageCompass" class="tab-page">
+      <section class="card compass-card">
+        <div class="compass-control-row">
+          <button id="calibrateBtn" class="calibrate-btn">Calibrar</button>
+          <div class="compass-right-controls">
+            <div class="altitude-selector-wrap">
+              <label for="altitudeSelect">Nível:</label>
+              <select id="altitudeSelect" class="altitude-select">
+                <option value="0" selected>SFC</option>
+                <option value="30">30 m</option>
+                <option value="60">60 m</option>
+                <option value="90">90 m</option>
+                <option value="120">120 m</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="compass-wrap">
+          <div class="compass-stage">
+            <div id="compassDial" class="compass-dial">
+              <svg id="compassSvg" class="compass-svg" viewBox="0 0 360 360" aria-hidden="true">
+                <g id="svgTicks"></g>
+                <g id="svgLabels"></g>
+              </svg>
+              <div id="windArrow" class="wind-arrow"><div class="shaft"></div><div class="head"></div></div>
+            </div>
+            <div class="phone-reference"></div>
+          </div>
+        </div>
+        <div class="compass-heading-under">
+          <span id="headingLabel" class="pill compass-heading-inline">--°</span>
+        </div>
+
+      </section>
+
+      <section class="card profile-card">
+        <div class="scale-note">Escala fixa: 0 a 13 kt</div>
+        <div id="bars" class="bars"></div>
+      </section>
+    </section>
+  </main>
+
+  <nav class="bottom-tab-menu" aria-label="Menu principal">
+    <button id="tabForecast" class="tab-button active" type="button" aria-label="Previsão" aria-controls="pageForecast">
+      <span class="tab-icon tab-img-mask wind-mask" aria-hidden="true"></span>
+    </button>
+    <button id="tabCompass" class="tab-button" type="button" aria-label="Bússola" aria-controls="pageCompass">
+      <span class="tab-icon tab-img-mask compass-mask" aria-hidden="true"></span>
+    </button>
+  </nav>
+
+
+
+  <div id="mapOverlay" class="map-overlay" aria-hidden="true">
+    <div class="map-panel">
+      <div class="map-header">
+        <div>
+          <h2>Selecionar local</h2>
+          <p id="mapHint">Toque no mapa para escolher o ponto.</p>
+        </div>
+        <button id="closeMapBtn" class="icon-btn" aria-label="Fechar mapa">×</button>
+      </div>
+      <div id="map" class="map-canvas"></div>
+    </div>
+  </div>
+
+
+  <div id="calibrationOverlay" class="calibration-overlay" aria-hidden="true">
+    <div class="calibration-panel">
+      <div class="calibration-header">
+        <div>
+          <h2>Calibrar bússola</h2>
+          <p>Aponte o topo do iPhone para o norte desejado e feche esta janela.</p>
+        </div>
+        <button id="closeCalibrationBtn" class="icon-btn" aria-label="Fechar calibração">×</button>
+      </div>
+
+      <div class="watch-wrap">
+        <div class="analog-watch" aria-label="Relógio analógico de calibração">
+          <div class="watch-markers">
+            <span class="watch-num n12">12</span>
+            <span class="watch-num n3">3</span>
+            <span class="watch-num n6">6</span>
+            <span class="watch-num n9">9</span>
+          </div>
+          <div id="calibrationRedLine" class="watch-red-line"></div>
+          <div id="watchHourHand" class="watch-hand hour-hand"></div>
+          <div id="watchMinuteHand" class="watch-hand minute-hand"></div>
+          <div class="watch-center"></div>
+        </div>
+      </div>
+
+      <p class="calibration-note">Ao fechar, a direção atual do iPhone será assumida como norte verdadeiro do app.</p>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="wind.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
