@@ -25,7 +25,7 @@ let longPressTimer = null;
 let autoRefreshTimer = null;
 let kpPreloadTimer = null;
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
-const CACHE_KEY = "DroneWind:lastWeather:v13";
+const CACHE_KEY = "DroneWind:lastWeather:v43";
 
 const el = id => document.getElementById(id);
 

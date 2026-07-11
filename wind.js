@@ -8,6 +8,16 @@ const OPEN_METEO_ENDPOINT = "https://api.open-meteo.com/v1/gfs";
 // this separate request gives a clean hourly visibility series to merge by time.
 const OPEN_METEO_VISIBILITY_ENDPOINT = "https://api.open-meteo.com/v1/forecast";
 
+// Current conditions are requested separately so the current-hour column uses
+// the most recent Open-Meteo current values instead of the hourly forecast.
+// Open-Meteo documents these values as current conditions based on 15-minute
+// weather-model data. The GFS endpoint is preferred; the standard endpoint is
+// used only as a fallback if a current variable is unavailable on /v1/gfs.
+const OPEN_METEO_CURRENT_ENDPOINTS = [
+  { url: OPEN_METEO_ENDPOINT, models: null },
+  { url: OPEN_METEO_VISIBILITY_ENDPOINT, models: "gfs_global" }
+];
+
 // Tentativas para a API de metadata/update do Open-Meteo. A API já documenta os
 // campos last_run_initialisation_time, last_run_modification_time e
 // last_run_availability_time, mas a forma exata do JSON pode variar entre modelos.
@@ -606,6 +616,112 @@ async function refreshVisibilitySeries(lat, lon, data){
   return data;
 }
 
+async function fetchCurrentConditions(lat, lon){
+  const fullVariables = [
+    "wind_speed_10m",
+    "wind_direction_10m",
+    "wind_speed_80m",
+    "wind_direction_80m",
+    "wind_speed_120m",
+    "wind_direction_120m",
+    "wind_gusts_10m",
+    "temperature_2m",
+    "visibility",
+    "precipitation",
+    "precipitation_probability"
+  ];
+
+  // Some model endpoints may reject one of the less common current variables.
+  // Retry with a smaller set while keeping the main current measurements.
+  const variableSets = [
+    fullVariables,
+    fullVariables.filter(v => v !== "precipitation_probability"),
+    [
+      "wind_speed_10m",
+      "wind_direction_10m",
+      "wind_gusts_10m",
+      "temperature_2m",
+      "visibility",
+      "precipitation"
+    ]
+  ];
+
+  for(const endpoint of OPEN_METEO_CURRENT_ENDPOINTS){
+    for(const variables of variableSets){
+      try{
+        const paramsObject = {
+          latitude: lat,
+          longitude: lon,
+          timezone: "auto",
+          wind_speed_unit: "ms",
+          current: variables.join(",")
+        };
+        if(endpoint.models) paramsObject.models = endpoint.models;
+
+        const params = new URLSearchParams(paramsObject);
+        const response = await fetch(`${endpoint.url}?${params.toString()}`, { cache:"no-store" });
+        if(!response.ok) continue;
+
+        const json = await response.json();
+        if(json && json.current && typeof json.current === "object") return json;
+      }catch(_){
+        // Try the next variable set or endpoint.
+      }
+    }
+  }
+
+  return null;
+}
+
+function currentNumber(current, key, fallback){
+  if(current && typeof current[key] === "number" && Number.isFinite(current[key])){
+    return current[key];
+  }
+  return fallback;
+}
+
+function applyCurrentConditionsToForecasts(data, currentData, forecasts, currentIndex){
+  if(!currentData || !currentData.current || !Array.isArray(forecasts) || !forecasts[currentIndex]){
+    return forecasts;
+  }
+
+  const current = currentData.current;
+  const existing = forecasts[currentIndex];
+  const idx = currentIndex;
+
+  const raw = {
+    s10: currentNumber(current, "wind_speed_10m", numberAt(data.hourly.wind_speed_10m, idx)),
+    d10: currentNumber(current, "wind_direction_10m", numberAt(data.hourly.wind_direction_10m, idx)),
+    s80: currentNumber(current, "wind_speed_80m", numberAt(data.hourly.wind_speed_80m, idx)),
+    d80: currentNumber(current, "wind_direction_80m", numberAt(data.hourly.wind_direction_80m, idx)),
+    s120: currentNumber(current, "wind_speed_120m", numberAt(data.hourly.wind_speed_120m, idx)),
+    d120: currentNumber(current, "wind_direction_120m", numberAt(data.hourly.wind_direction_120m, idx)),
+    gust10: currentNumber(current, "wind_gusts_10m", numberAt(data.hourly.wind_gusts_10m, idx))
+  };
+
+  // A valid 10 m wind pair is required to build the vertical profile. Upper
+  // levels fall back to the same hour's GFS values when absent in current data.
+  if(typeof raw.s10 === "number" && typeof raw.d10 === "number" &&
+     typeof raw.s80 === "number" && typeof raw.d80 === "number"){
+    existing.levels = buildTargetLevels(raw);
+  }
+
+  existing.extra = existing.extra || {};
+  existing.extra.temperature = currentNumber(current, "temperature_2m", existing.extra.temperature);
+  existing.extra.visibility = currentNumber(current, "visibility", existing.extra.visibility);
+  existing.extra.precipitation = currentNumber(current, "precipitation", existing.extra.precipitation);
+  existing.extra.precipitationProbability = currentNumber(
+    current,
+    "precipitation_probability",
+    existing.extra.precipitationProbability
+  );
+  existing.isCurrentConditions = true;
+  existing.currentConditionsTime = current.time || null;
+  existing.currentConditionsSource = "Open-Meteo current";
+
+  return forecasts;
+}
+
 async function fetchOpenMeteo(lat, lon){
   const baseParams = {
     latitude: lat,
@@ -668,9 +784,15 @@ async function fetchOpenMeteo(lat, lon){
     : formatGfsUpdate(latestGfsCycleDate());
 
   const forecasts = buildHourlyForecasts(data);
+  const selectedIndex = nearestHourIndex(data.hourly.time, data.utc_offset_seconds || 0);
+
+  // Replace only the current-hour forecast column with current conditions.
+  // All other columns remain the original hourly GFS forecast.
+  const currentData = await fetchCurrentConditions(lat, lon);
+  applyCurrentConditionsToForecasts(data, currentData, forecasts, selectedIndex);
+
   const latestKp = await getLatestSwpcKpCached(true);
   attachKpToForecasts(forecasts, latestKp);
-  const selectedIndex = nearestHourIndex(data.hourly.time, data.utc_offset_seconds || 0);
 
   return {
     forecasts,
